@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="sq">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EPS Kalkulator (VT/NT + zona)</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; margin:14px; color:#111; padding-bottom:55px;}
+    h2{margin:10px 0 6px;}
+    .grid{display:grid; grid-template-columns:1fr; gap:10px;}
+    @media (min-width: 900px){ .grid{grid-template-columns:1fr 1fr;} }
+    .card{border:1px solid #ddd; border-radius:10px; padding:12px;}
+    label{display:block; font-size:13px; margin:8px 0 3px;}
+    input{width:100%; padding:10px; font-size:16px; box-sizing:border-box;}
+    button{width:100%; padding:12px; font-size:16px; border-radius:10px; border:0; background:#111; color:#fff; margin-top:10px; cursor:pointer;}
+    button.secondary{background:#444;}
+    .muted{color:#555; font-size:13px; line-height:1.35}
+    pre{white-space:pre-wrap; background:#f6f6f6; padding:10px; border-radius:10px; border:1px solid #eee;}
+    .footer{
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      padding: 10px 12px;
+      background: #fff;
+      border-top: 1px solid #eee;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<h2>EPS Kalkulator (VT/NT + Zona)</h2>
+<div class="muted">
+  Fut leximet e sahatit (staro/novo), ditët e periudhës dhe çmimet. Zona ndahet sipas totalit (VT+NT); për periudha ≠30 ditë kufijtë lëvizin proporcionalisht.
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Leximet (kWh)</h2>
+
+    <label>Ditët e periudhës (p.sh. 30)</label>
+    <input id="days" type="number" value="30" min="1" />
+
+    <label>VT (e shtrenjtë) - Staro</label>
+    <input id="vt_old" type="number" value="0" />
+
+    <label>VT (e shtrenjtë) - Novo</label>
+    <input id="vt_new" type="number" value="0" />
+
+    <label>NT (e lirë) - Staro</label>
+    <input id="nt_old" type="number" value="0" />
+
+    <label>NT (e lirë) - Novo</label>
+    <input id="nt_new" type="number" value="0" />
+
+    <button class="secondary" onclick="swapVTNT()">Ndërro VT ↔ NT</button>
+    <button onclick="calc()">Llogarit</button>
+
+    <div class="muted" style="margin-top:8px">
+      Këshillë: nëse del shumë e shtrenjtë, shpesh VT/NT janë futur mbrapsht; përdor “Ndërro VT ↔ NT”.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Çmimet (RSD/kWh)</h2>
+    <div class="muted">Vendos çmimet sipas faturës tënde (mund të ndryshojnë me kohë).</div>
+
+    <label>Zelena VT</label><input id="p_g_vt" type="number" step="0.0001" value="9.6136" />
+    <label>Zelena NT</label><input id="p_g_nt" type="number" step="0.0001" value="2.4034" />
+
+    <label>Plava VT</label><input id="p_b_vt" type="number" step="0.0001" value="14.4203" />
+    <label>Plava NT</label><input id="p_b_nt" type="number" step="0.0001" value="3.6051" />
+
+    <label>Crvena VT</label><input id="p_r_vt" type="number" step="0.0001" value="0" />
+    <label>Crvena NT</label><input id="p_r_nt" type="number" step="0.0001" value="0" />
+
+    <h2 style="margin-top:12px">Shtesat (si te fatura)</h2>
+    <label>Obračunska snaga (kW)</label><input id="snaga_kw" type="number" step="0.01" value="11.04" />
+    <label>Cena po kW (RSD/kW)</label><input id="snaga_price" type="number" step="0.0001" value="60.8947" />
+
+    <label>Trošak garantovanog snabdevača (RSD)</label><input id="supplier" type="number" step="0.01" value="160.67" />
+
+    <label>Naknada OIE (RSD/kWh)</label><input id="oie" type="number" step="0.0001" value="0.801" />
+    <label>Naknada EE (RSD/kWh)</label><input id="ee" type="number" step="0.0001" value="0.015" />
+
+    <label>Akciza (%)</label><input id="excise_pct" type="number" step="0.01" value="7.5" />
+    <label>PDV (%)</label><input id="vat_pct" type="number" step="0.01" value="20" />
+
+    <label>Taksa RTS (RSD)</label><input id="rts" type="number" step="0.01" value="349" />
+    <label>Kamata (RSD)</label><input id="interest" type="number" step="0.01" value="0" />
+
+    <label>Preplata / minus (RSD) (opsionale)</label><input id="credit" type="number" step="0.01" value="0" />
+  </div>
+</div>
+
+<div class="card" style="margin-top:10px">
+  <h2>Rezultati</h2>
+  <pre id="out">Fut leximet dhe shtyp “Llogarit”.</pre>
+</div>
+
+<div class="footer">Punuar nga GENT HYSNI</div>
+
+<script>
+function $(id){ return document.getElementById(id); }
+function n(id){ return Number($(id).value || 0); }
+function r2(x){ return Math.round((x+Number.EPSILON)*100)/100; }
+function r0(x){ return Math.round(x); }
+
+const STORE_KEY = "eps_calc_v1";
+
+function saveState(){
+  const ids = ["days","vt_old","vt_new","nt_old","nt_new","p_g_vt","p_g_nt","p_b_vt","p_b_nt","p_r_vt","p_r_nt",
+               "snaga_kw","snaga_price","supplier","oie","ee","excise_pct","vat_pct","rts","interest","credit"];
+  const s = {};
+  for(const id of ids) s[id] = $(id).value;
+  localStorage.setItem(STORE_KEY, JSON.stringify(s));
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    for(const [id,val] of Object.entries(s)){
+      if($(id)) $(id).value = val;
+    }
+  }catch(e){}
+}
+
+function splitZones(total, days){
+  const greenLimit = 350 * (days/30);
+  const blueLimit  = 1200 * (days/30);
+  const g = Math.min(total, greenLimit);
+  const b = Math.min(Math.max(total - greenLimit, 0), blueLimit - greenLimit);
+  const r = Math.max(total - blueLimit, 0);
+  return {green:g, blue:b, red:r, greenLimit, blueLimit};
+}
+
+function swapVTNT(){
+  const vt_old = $("vt_old").value, vt_new = $("vt_new").value;
+  const nt_old = $("nt_old").value, nt_new = $("nt_new").value;
+  $("vt_old").value = nt_old; $("vt_new").value = nt_new;
+  $("nt_old").value = vt_old; $("nt_new").value = vt_new;
+  saveState();
+}
+
+function calc(){
+  const days = n('days');
+
+  const vt = n('vt_new') - n('vt_old');
+  const nt = n('nt_new') - n('nt_old');
+
+  if(vt < 0 || nt < 0){
+    $("out").textContent = "Gabim: Novo duhet të jetë më i madh se Staro (për VT dhe NT).";
+    return;
+  }
+
+  const total = vt + nt;
+  if(total <= 0){
+    $("out").textContent = "Nuk ka konsum (0 kWh).";
+    return;
+  }
+
+  const shareVT = vt / total;
+  const z = splitZones(total, days);
+
+  let vtG = r0(z.green * shareVT);
+  let ntG = r0(z.green) - vtG;
+
+  let vtB = r0(z.blue * shareVT);
+  let ntB = r0(z.blue) - vtB;
+
+  let vtR = r0(z.red * shareVT);
+  let ntR = r0(z.red) - vtR;
+
+  // korrigjim rrumbullakimi
+  vtB += (vt - (vtG+vtB+vtR));
+  ntB += (nt - (ntG+ntB+ntR));
+
+  const p = {
+    gVT: n('p_g_vt'), gNT: n('p_g_nt'),
+    bVT: n('p_b_vt'), bNT: n('p_b_nt'),
+    rVT: n('p_r_vt'), rNT: n('p_r_nt')
+  };
+
+  const energy =
+    vtG*p.gVT + ntG*p.gNT +
+    vtB*p.bVT + ntB*p.bNT +
+    vtR*p.rVT + ntR*p.rNT;
+
+  const snaga = n('snaga_kw') * n('snaga_price');
+  const supplier = n('supplier');
+  const oie = n('oie') * total;
+  const ee  = n('ee')  * total;
+
+  const subtotal = energy + snaga + supplier + oie + ee;
+  const excise = subtotal * (n('excise_pct')/100);
+  const vat = (subtotal + excise) * (n('vat_pct')/100);
+
+  const rts = n('rts');
+  const interest = n('interest');
+  const credit = n('credit');
+
+  const totalDin = subtotal + excise + vat + rts + interest + credit;
+
+  const msg =
+`KONSUMI
+- VT (e shtrenjtë): ${vt} kWh
+- NT (e lirë):     ${nt} kWh
+- Total:           ${total} kWh
+- Ditë periudhe:   ${days}
+
+KUFITË (për këtë periudhë)
+- Zelena deri: ~${r2(z.greenLimit)} kWh
+- Plava deri:  ~${r2(z.blueLimit)} kWh
+
+NDARJA NË ZONA (kWh)
+- Zelena: ${r2(z.green)} kWh  (VT ${vtG}, NT ${ntG})
+- Plava:  ${r2(z.blue)} kWh   (VT ${vtB}, NT ${ntB})
+- Crvena: ${r2(z.red)} kWh    (VT ${vtR}, NT ${ntR})
+
+KOSTO (RSD) - AFËR
+- Energija (kWh):     ${r2(energy)}
+- Obračunska snaga:   ${r2(snaga)}
+- Snabdevač (fiks):   ${r2(supplier)}
+- OIE (kWh):          ${r2(oie)}
+- EE (kWh):           ${r2(ee)}
+= Nën-total (bazë):   ${r2(subtotal)}
+- Akciza:             ${r2(excise)}
+- PDV:                ${r2(vat)}
+- RTS:                ${r2(rts)}
+- Kamata:             ${r2(interest)}
+- Preplata/Minus:     ${r2(credit)}
+
+TOTALI I PARASHIKUAR: ${r2(totalDin)} RSD`;
+
+  $("out").textContent = msg;
+  saveState();
+}
+
+loadState();
+</script>
+</body>
+</html>
